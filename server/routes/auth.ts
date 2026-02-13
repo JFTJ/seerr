@@ -6,6 +6,7 @@ import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
+import { config, initOidc, oidcConfig } from '@server/lib/oidc';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -17,6 +18,7 @@ import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { Router } from 'express';
 import net from 'net';
+import * as client from 'openid-client';
 import validator from 'validator';
 
 const authRoutes = Router();
@@ -813,6 +815,102 @@ authRoutes.post('/reset-password/:guid', async (req, res, next) => {
   });
 
   return res.status(200).json({ status: 'ok' });
+});
+
+authRoutes.get('/oidc', async (req, res, next) => {
+  try {
+    const code_verifier = client.randomPKCECodeVerifier();
+    const code_challenge =
+      await client.calculatePKCECodeChallenge(code_verifier);
+
+    const state = client.randomState();
+    const nonce = client.randomNonce();
+
+    req.session.oidc = {
+      code_verifier,
+      state,
+      nonce,
+      returnTo: req.query.returnTo?.toString() ?? '/',
+    };
+
+    if (!config) {
+      await initOidc();
+    }
+
+    const authorizationUrl = client.buildAuthorizationUrl(config, {
+      response_type: 'code',
+      client_id: 'seerr-dev',
+      redirect_uri: oidcConfig.redirectUri,
+      scope: 'openid profile email',
+      state,
+      nonce,
+      code_challenge,
+      code_challenge_method: 'S256',
+    });
+
+    res.redirect(authorizationUrl.href);
+  } catch (e) {
+    logger.warn('Failed to initiate OIDC login', {
+      label: 'OIDC',
+    });
+    next({
+      status: 500,
+      message: 'Failed to initiate OIDC login.',
+    });
+  }
+});
+
+authRoutes.get('/oidc/callback', async (req, res, next) => {
+  try {
+    const s = req.session.oidc;
+
+    if (!s) {
+      return res.status(400).json({ error: 'Missing OIDC session data.' });
+    }
+
+    const currentUrl = new URL(
+      `${req.protocol}://${req.get('host')}${req.originalUrl}`
+    );
+
+    const tokens = await client.authorizationCodeGrant(config, currentUrl, {
+      pkceCodeVerifier: s.code_verifier,
+      expectedState: s.state,
+      expectedNonce: s.nonce,
+      idTokenExpected: true,
+    });
+
+    // User association
+    const userRepository = getRepository(User);
+
+    const username = tokens.claims()?.preferred_username;
+    const email = tokens.claims()?.email;
+
+    // Try to find an existing user by username
+    const user = await userRepository
+      .createQueryBuilder('user')
+      .where('user.username = :username', { username })
+      .orWhere('user.email = :email', { email })
+      .getOne();
+
+    if (user) {
+      logger.info('OIDC login matched existing user', {
+        label: 'OIDC',
+        userId: user.id,
+        username,
+      });
+    }
+
+    if (user && req.session) {
+      req.session.userId = user.id;
+    }
+
+    const returnTo = s.returnTo || '/';
+    delete req.session.oidc;
+
+    res.redirect(returnTo);
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default authRoutes;

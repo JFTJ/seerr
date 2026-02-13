@@ -4012,6 +4012,76 @@ paths:
               required:
                 - email
                 - password
+  /auth/oidc:
+    get:
+      summary: Initiate OIDC SSO login
+      description: Redirects the user to the configured OIDC provider for authentication.
+      security: []
+      tags:
+        - auth
+      parameters:
+        - in: query
+          name: returnTo
+          required: false
+          schema:
+            type: string
+          description: URL to redirect to after successful authentication
+      responses:
+        '302':
+          description: Redirect to OIDC provider
+          headers:
+            Location:
+              schema:
+                type: string
+              description: OIDC provider authorization URL
+        '500':
+          description: Failed to initiate OIDC login
+  /auth/oidc/callback:
+    get:
+      summary: Handle OIDC callback
+      description: Exchanges the authorization code from the OIDC provider for user information, then creates or links the user account. Redirects to the application home or the returnTo parameter on success.
+      security: []
+      tags:
+        - auth
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema:
+            type: string
+          description: Authorization code returned by the OIDC provider
+        - in: query
+          name: state
+          required: true
+          schema:
+            type: string
+          description: State parameter for CSRF validation
+        - in: query
+          name: session_state
+          required: false
+          schema:
+            type: string
+          description: Session state returned by the OIDC provider
+        - in: query
+          name: iss
+          required: false
+          schema:
+            type: string
+          description: OIDC provider issuer URL
+      responses:
+        '302':
+          description: Redirect to home or returnTo URL after successful authentication
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Redirect URL to application
+        '400':
+          description: Missing code or state parameter
+        '403':
+          description: Invalid state parameter or access denied
+        '500':
+          description: Authentication failed
   /auth/logout:
     post:
       summary: Sign out and clear session cookie
