@@ -46,6 +46,24 @@ const Login = () => {
     'mediaserver' | 'local' | 'oidc' | null
   >(null);
 
+  // Effect that checks for an `error_message` query param.
+  // This is used to display error messages from the OIDC callback flow redirection
+  useEffect(() => {
+    if (!router.isReady) {
+      return;
+    }
+
+    const loginErrorMessage = router.query.error_message;
+
+    if (typeof loginErrorMessage === 'string' && loginErrorMessage.trim()) {
+      try {
+        setError(decodeURIComponent(loginErrorMessage));
+      } catch (e) {
+        setError(loginErrorMessage);
+      }
+    }
+  }, [router.isReady, router.query.error_message]);
+
   // Effect that is triggered when loading the login page.
   // We check the settings to determine which login mode we should default to
   useEffect(() => {

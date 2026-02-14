@@ -869,7 +869,9 @@ authRoutes.get('/oidc/callback', async (req, res, next) => {
     const s = req.session.oidc;
 
     if (!s) {
-      return res.status(400).json({ error: 'Missing OIDC session data.' });
+      return res.redirect(
+        `/login?error_message=${encodeURI('Missing OIDC session data')}`
+      );
     }
 
     const currentUrl = new URL(
@@ -887,11 +889,18 @@ authRoutes.get('/oidc/callback', async (req, res, next) => {
       }
     );
 
+    const claims = tokens.claims();
+    if (!claims) {
+      return res.redirect(
+        `/login?error_message=${encodeURI('Invalid OIDC response')}`
+      );
+    }
+
     // User association
     const userRepository = getRepository(User);
 
-    const username = tokens.claims()?.preferred_username;
-    const email = tokens.claims()?.email;
+    const username = claims.preferred_username;
+    const email = claims.email;
 
     // Try to find an existing user by username
     const user = await userRepository
@@ -900,17 +909,19 @@ authRoutes.get('/oidc/callback', async (req, res, next) => {
       .orWhere('user.email = :email', { email })
       .getOne();
 
-    if (user) {
-      logger.info('OIDC login matched existing user', {
-        label: 'OIDC',
-        userId: user.id,
-        username,
-      });
+    if (!user) {
+      return res.redirect(
+        `/login?error_message=${encodeURI('You are note registered with an account. Please contact your administrator.')}`
+      );
     }
 
-    if (user && req.session) {
-      req.session.userId = user.id;
-    }
+    logger.info('OIDC login matched existing user', {
+      label: 'OIDC',
+      userId: user.id,
+      username,
+    });
+
+    req.session.userId = user.id;
 
     const returnTo = s.returnTo || '/';
     delete req.session.oidc;
