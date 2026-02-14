@@ -203,6 +203,7 @@ interface FullPublicSettings extends PublicSettings {
   userEmailRequired: boolean;
   newPlexLogin: boolean;
   youtubeUrl: string;
+  oidcEnabled: boolean;
 }
 
 export interface NotificationAgentConfig {
@@ -348,6 +349,15 @@ export type JobId =
   | 'availability-sync'
   | 'process-blocklisted-tags';
 
+export interface OidcSettings {
+  enabled: boolean;
+  authority: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scope: string;
+}
+
 export interface AllSettings {
   clientId: string;
   vapidPublic: string;
@@ -363,6 +373,7 @@ export interface AllSettings {
   jobs: Record<JobId, JobSettings>;
   network: NetworkSettings;
   metadataSettings: MetadataSettings;
+  oidc: OidcSettings;
   migrations: string[];
 }
 
@@ -594,6 +605,14 @@ class Settings {
           forceMaxTtl: -1,
         },
       },
+      oidc: {
+        enabled: false,
+        authority: '',
+        clientId: '',
+        clientSecret: '',
+        redirectUri: '',
+        scope: 'openid profile',
+      },
       migrations: [],
     };
     if (initialSettings) {
@@ -697,6 +716,7 @@ class Settings {
         this.data.notifications.agents.email.options.userEmailRequired,
       newPlexLogin: this.data.main.newPlexLogin,
       youtubeUrl: this.data.main.youtubeUrl,
+      oidcEnabled: this.data.oidc.enabled,
     };
   }
 
@@ -730,6 +750,14 @@ class Settings {
 
   set migrations(data: string[]) {
     this.data.migrations = data;
+  }
+
+  get oidc(): OidcSettings {
+    return this.data.oidc;
+  }
+
+  set oidc(data: OidcSettings) {
+    this.data.oidc = data;
   }
 
   get clientId(): string {

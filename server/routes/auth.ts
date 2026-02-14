@@ -6,7 +6,7 @@ import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
-import { config, initOidc, oidcConfig } from '@server/lib/oidc';
+import { getOidcConfig, initOidc } from '@server/lib/oidc';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -833,15 +833,19 @@ authRoutes.get('/oidc', async (req, res, next) => {
       returnTo: req.query.returnTo?.toString() ?? '/',
     };
 
-    if (!config) {
+    let config: client.Configuration;
+    try {
+      config = getOidcConfig();
+    } catch (e) {
       await initOidc();
+      config = getOidcConfig();
     }
 
     const authorizationUrl = client.buildAuthorizationUrl(config, {
       response_type: 'code',
-      client_id: 'seerr-dev',
-      redirect_uri: oidcConfig.redirectUri,
-      scope: 'openid profile email',
+      client_id: getSettings().oidc.clientId,
+      redirect_uri: getSettings().oidc.redirectUri,
+      scope: getSettings().oidc.scope,
       state,
       nonce,
       code_challenge,
@@ -872,12 +876,16 @@ authRoutes.get('/oidc/callback', async (req, res, next) => {
       `${req.protocol}://${req.get('host')}${req.originalUrl}`
     );
 
-    const tokens = await client.authorizationCodeGrant(config, currentUrl, {
-      pkceCodeVerifier: s.code_verifier,
-      expectedState: s.state,
-      expectedNonce: s.nonce,
-      idTokenExpected: true,
-    });
+    const tokens = await client.authorizationCodeGrant(
+      getOidcConfig(),
+      currentUrl,
+      {
+        pkceCodeVerifier: s.code_verifier,
+        expectedState: s.state,
+        expectedNonce: s.nonce,
+        idTokenExpected: true,
+      }
+    );
 
     // User association
     const userRepository = getRepository(User);

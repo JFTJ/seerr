@@ -5,9 +5,7 @@ import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Login', {
   loginwithsso: 'Login with SSO',
-  signingin: 'Redirecting…',
-  signin: 'Sign In with SSO',
-  ssologinerror: 'Failed to initiate SSO login.',
+  signinButton: 'Use SSO',
 });
 
 const OIDCLogin = () => {
@@ -30,6 +28,7 @@ const OIDCLogin = () => {
         className="w-full shadow-sm"
       >
         <ArrowLeftOnRectangleIcon />
+        {intl.formatMessage(messages.signinButton)}
       </Button>
     </div>
   );

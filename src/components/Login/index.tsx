@@ -42,9 +42,29 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isProcessing, setProcessing] = useState(false);
   const [authToken, setAuthToken] = useState<string | undefined>(undefined);
-  const [loginMode, setLoginMode] = useState<'mediaserver' | 'local' | 'oidc'>(
-    settings.currentSettings.mediaServerLogin ? 'mediaserver' : 'local'
-  );
+  const [loginMode, setLoginMode] = useState<
+    'mediaserver' | 'local' | 'oidc' | null
+  >(null);
+
+  // Effect that is triggered when loading the login page.
+  // We check the settings to determine which login mode we should default to
+  useEffect(() => {
+    if (loginMode === null) {
+      // Priority: OIDC > MediaServer > Local
+      if (settings.currentSettings.oidcEnabled) {
+        setLoginMode('oidc');
+      } else if (settings.currentSettings.mediaServerLogin) {
+        setLoginMode('mediaserver');
+      } else if (settings.currentSettings.localLogin) {
+        setLoginMode('local');
+      }
+    }
+  }, [
+    settings.currentSettings.oidcEnabled,
+    settings.currentSettings.localLogin,
+    settings.currentSettings.mediaServerLogin,
+    loginMode,
+  ]);
 
   // Effect that is triggered when the `authToken` comes back from the Plex OAuth
   // We take the token and attempt to sign in. If we get a success message, we will
@@ -112,33 +132,33 @@ const Login = () => {
       ? mediaServerLoginRef
       : loginMode === 'oidc'
         ? oidcLoginRef
-        : localLoginRef;
+        : loginMode === 'local'
+          ? localLoginRef
+          : null;
 
   const loginFormVisible =
     (isJellyfin && settings.currentSettings.mediaServerLogin) ||
     settings.currentSettings.localLogin;
   const additionalLoginOptions = [
     settings.currentSettings.mediaServerLogin &&
+      loginMode !== 'mediaserver' &&
       (settings.currentSettings.mediaServerType === MediaServerType.PLEX ? (
         <PlexLoginButton
           key="plex"
           isProcessing={isProcessing}
           onAuthToken={(authToken) => setAuthToken(authToken)}
-          large={!isJellyfin && !settings.currentSettings.localLogin}
+          large={false}
         />
       ) : (
-        settings.currentSettings.localLogin &&
-        loginMode !== 'mediaserver' && (
-          <Button
-            key="mediaserver"
-            data-testid="mediaserver-login-button"
-            className="flex-1 bg-transparent"
-            onClick={() => setLoginMode('mediaserver')}
-          >
-            <MediaServerLogo />
-            <span>{mediaServerName}</span>
-          </Button>
-        )
+        <Button
+          key="mediaserver"
+          data-testid="mediaserver-login-button"
+          className="flex-1 bg-transparent"
+          onClick={() => setLoginMode('mediaserver')}
+        >
+          <MediaServerLogo />
+          <span>{mediaServerName}</span>
+        </Button>
       )),
     settings.currentSettings.localLogin && loginMode !== 'local' && (
       <Button
@@ -156,14 +176,14 @@ const Login = () => {
         <span>{settings.currentSettings.applicationTitle}</span>
       </Button>
     ),
-    loginMode !== 'oidc' && (
+    settings.currentSettings.oidcEnabled && loginMode !== 'oidc' && (
       <Button
         key="oidc"
         data-testid="oidc-login-button"
-        className="flex-1 bg-indigo-600 hover:bg-indigo-500"
+        className="flex-1 bg-transparent"
         onClick={() => setLoginMode('oidc')}
       >
-        <span>{intl.formatMessage(messages.signinwithsso)}</span>
+        {intl.formatMessage(messages.signinwithsso)}
       </Button>
     ),
   ].filter((o): o is JSX.Element => !!o);
@@ -216,71 +236,80 @@ const Login = () => {
               </div>
             </Transition>
             <div className="px-10 py-8">
-              <SwitchTransition mode="out-in">
-                <CSSTransition
-                  key={loginMode}
-                  nodeRef={loginRef}
-                  addEndListener={(done) => {
-                    loginRef.current?.addEventListener(
-                      'transitionend',
-                      done,
-                      false
-                    );
-                  }}
-                  onEntered={() => {
-                    document
-                      .querySelector<HTMLInputElement>('#email, #username')
-                      ?.focus();
-                  }}
-                  classNames={{
-                    appear: 'opacity-0',
-                    appearActive: 'transition-opacity duration-500 opacity-100',
-                    enter: 'opacity-0',
-                    enterActive: 'transition-opacity duration-500 opacity-100',
-                    exitActive: 'transition-opacity duration-0 opacity-0',
-                  }}
-                >
-                  <div ref={loginRef} className="button-container">
-                    {loginMode === 'oidc' ? (
-                      <OIDCLogin />
-                    ) : isJellyfin &&
-                      (loginMode === 'mediaserver' ||
-                        !settings.currentSettings.localLogin) ? (
-                      <JellyfinLogin
-                        serverType={settings.currentSettings.mediaServerType}
-                        revalidate={revalidate}
-                      />
+              {loginMode !== null && (
+                <>
+                  <SwitchTransition mode="out-in">
+                    <CSSTransition
+                      key={loginMode}
+                      nodeRef={loginRef!}
+                      addEndListener={(done) => {
+                        loginRef?.current?.addEventListener(
+                          'transitionend',
+                          done,
+                          false
+                        );
+                      }}
+                      onEntered={() => {
+                        document
+                          .querySelector<HTMLInputElement>('#email, #username')
+                          ?.focus();
+                      }}
+                      classNames={{
+                        appear: 'opacity-0',
+                        appearActive:
+                          'transition-opacity duration-500 opacity-100',
+                        enter: 'opacity-0',
+                        enterActive:
+                          'transition-opacity duration-500 opacity-100',
+                        exitActive: 'transition-opacity duration-0 opacity-0',
+                      }}
+                    >
+                      <div ref={loginRef} className="button-container">
+                        {loginMode === 'oidc' &&
+                        settings.currentSettings.oidcEnabled ? (
+                          <OIDCLogin />
+                        ) : isJellyfin &&
+                          (loginMode === 'mediaserver' ||
+                            !settings.currentSettings.localLogin) ? (
+                          <JellyfinLogin
+                            serverType={
+                              settings.currentSettings.mediaServerType
+                            }
+                            revalidate={revalidate}
+                          />
+                        ) : (
+                          settings.currentSettings.localLogin && (
+                            <LocalLogin revalidate={revalidate} />
+                          )
+                        )}
+                      </div>
+                    </CSSTransition>
+                  </SwitchTransition>
+
+                  {additionalLoginOptions.length > 0 &&
+                    (loginFormVisible ? (
+                      <div className="flex items-center py-5">
+                        <div className="flex-grow border-t border-gray-600"></div>
+                        <span className="mx-2 flex-shrink text-sm text-gray-400">
+                          {intl.formatMessage(messages.orsigninwith)}
+                        </span>
+                        <div className="flex-grow border-t border-gray-600"></div>
+                      </div>
                     ) : (
-                      settings.currentSettings.localLogin && (
-                        <LocalLogin revalidate={revalidate} />
-                      )
-                    )}
-                  </div>
-                </CSSTransition>
-              </SwitchTransition>
+                      <h2 className="mb-6 text-center text-lg font-bold text-neutral-200">
+                        {intl.formatMessage(messages.signinheader)}
+                      </h2>
+                    ))}
 
-              {additionalLoginOptions.length > 0 &&
-                (loginFormVisible ? (
-                  <div className="flex items-center py-5">
-                    <div className="flex-grow border-t border-gray-600"></div>
-                    <span className="mx-2 flex-shrink text-sm text-gray-400">
-                      {intl.formatMessage(messages.orsigninwith)}
-                    </span>
-                    <div className="flex-grow border-t border-gray-600"></div>
+                  <div
+                    className={`flex w-full flex-wrap gap-2 ${
+                      !loginFormVisible ? 'flex-col' : ''
+                    }`}
+                  >
+                    {additionalLoginOptions}
                   </div>
-                ) : (
-                  <h2 className="mb-6 text-center text-lg font-bold text-neutral-200">
-                    {intl.formatMessage(messages.signinheader)}
-                  </h2>
-                ))}
-
-              <div
-                className={`flex w-full flex-wrap gap-2 ${
-                  !loginFormVisible ? 'flex-col' : ''
-                }`}
-              >
-                {additionalLoginOptions}
-              </div>
+                </>
+              )}
             </div>
           </>
         </div>

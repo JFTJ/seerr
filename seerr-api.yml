@@ -1595,6 +1595,32 @@ components:
             allowSelfSigned:
               type: boolean
               example: false
+    OidcSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        authority:
+          type: string
+          example: 'https://keycloak.example.com/realms/myrealm'
+        clientId:
+          type: string
+          example: 'seerr-client'
+        clientSecret:
+          type: string
+          example: 'secret123'
+        redirectUri:
+          type: string
+          example: 'https://seerr.example.com/api/v1/auth/oidc/callback'
+        scope:
+          type: string
+          default: 'openid profile'
+      required:
+        - authority
+        - clientId
+        - clientSecret
+        - redirectUri
     Job:
       type: object
       properties:
@@ -3748,6 +3774,68 @@ paths:
       responses:
         '204':
           description: Test notification attempted
+  /settings/oidc:
+    get:
+      summary: Get OIDC settings
+      description: Returns current OIDC configuration settings in a JSON object.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Returned OIDC settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  authority:
+                    type: string
+                  clientId:
+                    type: string
+                  clientSecretSHA256:
+                    type: string
+                    description: SHA256 hash of the client secret
+                  redirectUri:
+                    type: string
+                  postLogoutRedirectUri:
+                    type: string
+                  scope:
+                    type: string
+    post:
+      summary: Create OIDC configuration
+      description: Updates the OIDC configuration with the provided values.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OidcSettings'
+      responses:
+        '201':
+          description: 'OIDC configuration created successfully'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  authority:
+                    type: string
+                  clientId:
+                    type: string
+                  redirectUri:
+                    type: string
+                  scope:
+                    type: string
+        '400':
+          description: 'Bad request - missing required fields'
+        '500':
+          description: 'Failed to create OIDC configuration'
   /settings/discover:
     get:
       summary: Get all discover sliders
@@ -4039,7 +4127,7 @@ paths:
   /auth/oidc/callback:
     get:
       summary: Handle OIDC callback
-      description: Exchanges the authorization code from the OIDC provider for user information, then creates or links the user account. Redirects to the application home or the returnTo parameter on success.
+      description: Exchanges the authorization code from the OIDC provider for user information.
       security: []
       tags:
         - auth
@@ -4076,12 +4164,6 @@ paths:
               schema:
                 type: string
               description: Redirect URL to application
-        '400':
-          description: Missing code or state parameter
-        '403':
-          description: Invalid state parameter or access denied
-        '500':
-          description: Authentication failed
   /auth/logout:
     post:
       summary: Sign out and clear session cookie
