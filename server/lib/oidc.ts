@@ -10,16 +10,16 @@ export async function initOidc() {
     throw new Error('OIDC is not enabled in settings');
   }
 
-  config = await client.discovery(
+  return client.discovery(
     new URL(oidcSettings.authority),
     oidcSettings.clientId,
     oidcSettings.clientSecret
   );
 }
 
-export function getOidcConfig(): client.Configuration {
+export async function getOidcConfig() {
   if (!config) {
-    throw new Error('OIDC not initialized. Call initOidc() first.');
+    config = await initOidc();
   }
   return config;
 }

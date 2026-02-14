@@ -60,6 +60,7 @@ const messages = defineMessages('components.UserList', {
     'Are you sure you want to delete this user? All of their request data will be permanently removed.',
   localuser: 'Local User',
   mediaServerUser: '{mediaServerName} User',
+  openiduser: 'OpenID User',
   createlocaluser: 'Create Local User',
   creating: 'Creating…',
   create: 'Create',
@@ -698,6 +699,10 @@ const UserList = () => {
                     {intl.formatMessage(messages.mediaServerUser, {
                       mediaServerName: 'Jellyfin',
                     })}
+                  </Badge>
+                ) : user.userType === UserType.OPENID ? (
+                  <Badge badgeType="default">
+                    {intl.formatMessage(messages.openiduser)}
                   </Badge>
                 ) : null}
               </Table.TD>

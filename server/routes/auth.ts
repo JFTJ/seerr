@@ -6,7 +6,7 @@ import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
-import { getOidcConfig, initOidc } from '@server/lib/oidc';
+import { getOidcConfig } from '@server/lib/oidc';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -817,12 +817,11 @@ authRoutes.post('/reset-password/:guid', async (req, res, next) => {
   return res.status(200).json({ status: 'ok' });
 });
 
-authRoutes.get('/oidc', async (req, res, next) => {
+authRoutes.get('/oidc', async (req, res) => {
   try {
     const code_verifier = client.randomPKCECodeVerifier();
     const code_challenge =
       await client.calculatePKCECodeChallenge(code_verifier);
-
     const state = client.randomState();
     const nonce = client.randomNonce();
 
@@ -833,19 +832,14 @@ authRoutes.get('/oidc', async (req, res, next) => {
       returnTo: req.query.returnTo?.toString() ?? '/',
     };
 
-    let config: client.Configuration;
-    try {
-      config = getOidcConfig();
-    } catch (e) {
-      await initOidc();
-      config = getOidcConfig();
-    }
+    const config = await getOidcConfig();
+    const settings = getSettings();
 
     const authorizationUrl = client.buildAuthorizationUrl(config, {
       response_type: 'code',
-      client_id: getSettings().oidc.clientId,
-      redirect_uri: getSettings().oidc.redirectUri,
-      scope: getSettings().oidc.scope,
+      client_id: settings.oidc.clientId,
+      redirect_uri: settings.oidc.redirectUri,
+      scope: settings.oidc.scope,
       state,
       nonce,
       code_challenge,
@@ -856,19 +850,22 @@ authRoutes.get('/oidc', async (req, res, next) => {
   } catch (e) {
     logger.warn('Failed to initiate OIDC login', {
       label: 'OIDC',
+      error: e.message,
     });
-    next({
-      status: 500,
-      message: 'Failed to initiate OIDC login.',
-    });
+    return res.redirect(
+      `/login?error_message=${encodeURI('Failed to initiate OIDC login')}`
+    );
   }
 });
 
-authRoutes.get('/oidc/callback', async (req, res, next) => {
+authRoutes.get('/oidc/callback', async (req, res) => {
   try {
     const s = req.session.oidc;
 
     if (!s) {
+      logger.warn('Missing OIDC session data during callback', {
+        label: 'OIDC',
+      });
       return res.redirect(
         `/login?error_message=${encodeURI('Missing OIDC session data')}`
       );
@@ -878,47 +875,91 @@ authRoutes.get('/oidc/callback', async (req, res, next) => {
       `${req.protocol}://${req.get('host')}${req.originalUrl}`
     );
 
-    const tokens = await client.authorizationCodeGrant(
-      getOidcConfig(),
-      currentUrl,
-      {
-        pkceCodeVerifier: s.code_verifier,
-        expectedState: s.state,
-        expectedNonce: s.nonce,
-        idTokenExpected: true,
-      }
-    );
+    const config = await getOidcConfig();
+
+    const tokens = await client.authorizationCodeGrant(config, currentUrl, {
+      pkceCodeVerifier: s.code_verifier,
+      expectedState: s.state,
+      expectedNonce: s.nonce,
+      idTokenExpected: true,
+    });
 
     const claims = tokens.claims();
     if (!claims) {
+      logger.warn('Invalid OIDC response: missing claims', {
+        label: 'OIDC',
+      });
       return res.redirect(
         `/login?error_message=${encodeURI('Invalid OIDC response')}`
       );
     }
 
-    // User association
     const userRepository = getRepository(User);
 
-    const username = claims.preferred_username;
-    const email = claims.email;
+    const username = claims.preferred_username?.toString();
+    const email = claims.email?.toString();
+    const sub = claims.sub?.toString();
 
-    // Try to find an existing user by username
-    const user = await userRepository
+    if (!sub) {
+      logger.warn('OIDC account is missing subject identifier', {
+        label: 'OIDC',
+      });
+      return res.redirect(
+        `/login?error_message=${encodeURI('OIDC account is missing a subject identifier')}`
+      );
+    }
+
+    // Try to find an existing user by sub first (most reliable), then by username or email
+    let user = await userRepository
       .createQueryBuilder('user')
-      .where('user.username = :username', { username })
+      .where('user.openidSub = :sub', { sub })
+      .orWhere('user.username = :username', { username })
       .orWhere('user.email = :email', { email })
       .getOne();
 
     if (!user) {
-      return res.redirect(
-        `/login?error_message=${encodeURI('You are note registered with an account. Please contact your administrator.')}`
-      );
+      // User doesn't exist, we'll create them, but we need a username to do so
+      if (!username) {
+        return res.redirect(
+          `/login?error_message=${encodeURI('OIDC account is missing a username')}`
+        );
+      }
+
+      user = new User({
+        email: email || username,
+        username,
+        openidSub: sub,
+        permissions: getSettings().main.defaultPermissions,
+        userType: UserType.OPENID,
+      });
+      user.avatar = getUserAvatarUrl(user);
+
+      await userRepository.save(user);
+
+      logger.info('OIDC login created new user', {
+        label: 'OIDC',
+        userId: user.id,
+        username: user.username,
+        openidSub: sub,
+      });
+    } else if (!user.openidSub) {
+      // Update existing user with openid sub if they don't have one
+      user.openidSub = sub;
+      await userRepository.save(user);
+
+      logger.info('OIDC login updated existing user with openid sub', {
+        label: 'OIDC',
+        userId: user.id,
+        username: user.username,
+        openidSub: sub,
+      });
     }
 
-    logger.info('OIDC login matched existing user', {
+    logger.info('Logging in OIDC user', {
       label: 'OIDC',
       userId: user.id,
       username,
+      openidSub: sub,
     });
 
     req.session.userId = user.id;
@@ -928,7 +969,13 @@ authRoutes.get('/oidc/callback', async (req, res, next) => {
 
     res.redirect(returnTo);
   } catch (e) {
-    next(e);
+    logger.warn('Unexpected error during OIDC callback', {
+      label: 'OIDC',
+      errorMessage: e.message,
+    });
+    return res.redirect(
+      `/login?error_message=${encodeURI('Unexpected error in OIDC login')}`
+    );
   }
 });
 

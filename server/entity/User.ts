@@ -82,6 +82,9 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   public jellyfinUserId?: string | null;
 
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  public openidSub?: string | null;
+
   @Column({ type: 'varchar', nullable: true, select: false })
   public jellyfinDeviceId?: string | null;
 

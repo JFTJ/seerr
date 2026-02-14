@@ -39,6 +39,7 @@ const messages = defineMessages(
     accounttype: 'Account Type',
     plexuser: 'Plex User',
     localuser: 'Local User',
+    openiduser: 'OpenID User',
     role: 'Role',
     owner: 'Owner',
     admin: 'Admin',
@@ -102,9 +103,11 @@ const UserGeneralSettings = () => {
 
   const UserGeneralSettingsSchema = Yup.object().shape({
     email:
-      // email is required for everybody except non-admin jellyfin users
+      // email is required for everybody except non-admin jellyfin/emby/openid users
       user?.id === 1 ||
-      (user?.userType !== UserType.JELLYFIN && user?.userType !== UserType.EMBY)
+      (user?.userType !== UserType.JELLYFIN &&
+        user?.userType !== UserType.EMBY &&
+        user?.userType !== UserType.OPENID)
         ? Yup.string()
             .test(
               'email',
@@ -177,7 +180,10 @@ const UserGeneralSettings = () => {
             await axios.post(`/api/v1/user/${user?.id}/settings/main`, {
               username: values.displayName,
               email:
-                values.email || user?.jellyfinUsername || user?.plexUsername,
+                values.email ||
+                user?.jellyfinUsername ||
+                user?.plexUsername ||
+                user?.username,
               discordId: values.discordId,
               locale: values.locale,
               discoverRegion: values.discoverRegion,
@@ -271,6 +277,10 @@ const UserGeneralSettings = () => {
                         {intl.formatMessage(messages.mediaServerUser, {
                           mediaServerName: 'Jellyfin',
                         })}
+                      </Badge>
+                    ) : user?.userType === UserType.OPENID ? (
+                      <Badge badgeType="default">
+                        {intl.formatMessage(messages.openiduser)}
                       </Badge>
                     ) : null}
                   </div>
