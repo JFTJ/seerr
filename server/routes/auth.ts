@@ -885,6 +885,8 @@ authRoutes.get('/oidc/callback', async (req, res) => {
       expectedNonce: s.nonce,
       idTokenExpected: true,
     });
+    const returnTo = s.returnTo || '/';
+    delete req.session.oidc;
 
     const claims = tokens.claims();
     if (!claims) {
@@ -896,7 +898,6 @@ authRoutes.get('/oidc/callback', async (req, res) => {
       );
     }
 
-    const userRepository = getRepository(User);
     const settings = getSettings();
 
     if (
@@ -932,49 +933,72 @@ authRoutes.get('/oidc/callback', async (req, res) => {
       );
     }
 
-    // Try to find an existing user by sub first (most reliable), then by username or email
+    const userRepository = getRepository(User);
+
+    // Try to find an existing user by sub first
     let user = await userRepository
       .createQueryBuilder('user')
       .where('user.openidSub = :sub', { sub })
-      .orWhere('user.username = :username', { username })
-      .orWhere('user.email = :email', { email })
       .getOne();
 
+    // The user logged in with OIDC before, we can just log them in
+    if (user) {
+      logger.info('Logging in OIDC user', {
+        label: 'OIDC',
+        userId: user.id,
+        username,
+        openidSub: sub,
+      });
+
+      req.session.userId = user.id;
+      res.redirect(returnTo);
+    }
+
+    // If new user login is not allowed, we can't let them log in
+    if (!settings.oidc.newUserLogin) {
+      logger.warn(
+        'OIDC login attempted for non-existent user but newUserLogin is disabled',
+        {
+          label: 'OIDC',
+          username,
+          openidSub: sub,
+        }
+      );
+      return res.redirect(
+        `/login?error_message=${encodeURI(
+          'User account not found and new user registration is disabled. Contact your administrator.'
+        )}`
+      );
+    }
+
+    // Try to find an existing user by email or username as fallback
+    user = await userRepository
+      .createQueryBuilder('user')
+      .where('user.email = :email', { email })
+      .orWhere('user.email = :username', { username }) // for jellyfin users that don't have email, we can use username as fallback
+      .getOne();
+
+    // If we still can't find a user, we'll create a new one
     if (!user) {
-      // Check if new user login is allowed
-      if (!settings.oidc.newUserLogin) {
-        logger.warn(
-          'OIDC login attempted for non-existent user but newUserLogin is disabled',
-          {
-            label: 'OIDC',
-            username,
-            openidSub: sub,
-          }
-        );
+      // But we need an email or username to create the user
+      if (!username && !email) {
         return res.redirect(
           `/login?error_message=${encodeURI(
-            'User account not found and new user registration is disabled. Contact your administrator.'
+            'account is missing a username or email'
           )}`
         );
       }
-
-      // User doesn't exist, we'll create them, but we need a username to do so
-      if (!username) {
-        return res.redirect(
-          `/login?error_message=${encodeURI('OIDC account is missing a username')}`
-        );
-      }
-
       user = new User({
         email: email || username,
         username,
         openidSub: sub,
         permissions: settings.main.defaultPermissions,
         userType: UserType.OPENID,
-        avatar: gravatarUrl(email || username, { default: 'mm', size: 200 }),
+        avatar: gravatarUrl(email || username || 'none', {
+          default: 'mm',
+          size: 200,
+        }),
       });
-
-      await userRepository.save(user);
 
       logger.info('OIDC login created new user', {
         label: 'OIDC',
@@ -982,10 +1006,9 @@ authRoutes.get('/oidc/callback', async (req, res) => {
         username: user.username,
         openidSub: sub,
       });
-    } else if (!user.openidSub) {
-      // Update existing user with openid sub if they don't have one
+    } else {
+      // Link an existing user by adding their sub
       user.openidSub = sub;
-      await userRepository.save(user);
 
       logger.info('OIDC login updated existing user with openid sub', {
         label: 'OIDC',
@@ -995,18 +1018,9 @@ authRoutes.get('/oidc/callback', async (req, res) => {
       });
     }
 
-    logger.info('Logging in OIDC user', {
-      label: 'OIDC',
-      userId: user.id,
-      username,
-      openidSub: sub,
-    });
+    await userRepository.save(user);
 
     req.session.userId = user.id;
-
-    const returnTo = s.returnTo || '/';
-    delete req.session.oidc;
-
     res.redirect(returnTo);
   } catch (e) {
     logger.warn('Unexpected error during OIDC callback', {
