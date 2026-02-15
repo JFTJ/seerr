@@ -1616,6 +1616,14 @@ components:
         scope:
           type: string
           default: 'openid profile'
+        requiredRoles:
+          type: array
+          items:
+            type: string
+          default: []
+        roleClaim:
+          type: string
+          default: ''
       required:
         - authority
         - clientId

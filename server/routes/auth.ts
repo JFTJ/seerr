@@ -15,6 +15,7 @@ import { checkAvatarChanged } from '@server/routes/avatarproxy';
 import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
 import { getHostname } from '@server/utils/getHostname';
+import { hasRequiredRoleClaims } from '@server/utils/oidc';
 import axios from 'axios';
 import { Router } from 'express';
 import net from 'net';
@@ -895,6 +896,27 @@ authRoutes.get('/oidc/callback', async (req, res) => {
     }
 
     const userRepository = getRepository(User);
+    const settings = getSettings();
+
+    if (
+      !hasRequiredRoleClaims(
+        tokens.access_token,
+        settings.oidc.requiredRoles,
+        settings.oidc.roleClaim
+      )
+    ) {
+      logger.warn('OIDC account is missing required role claims', {
+        label: 'OIDC',
+        roleClaimsPath: settings.oidc.roleClaim,
+        requiredRoles: settings.oidc.requiredRoles,
+        userSub: claims.sub,
+      });
+      return res.redirect(
+        `/login?error_message=${encodeURI(
+          'You are not authorized. Ask your administrator for access.'
+        )}`
+      );
+    }
 
     const username = claims.preferred_username?.toString();
     const email = claims.email?.toString();
@@ -929,7 +951,7 @@ authRoutes.get('/oidc/callback', async (req, res) => {
         email: email || username,
         username,
         openidSub: sub,
-        permissions: getSettings().main.defaultPermissions,
+        permissions: settings.main.defaultPermissions,
         userType: UserType.OPENID,
       });
       user.avatar = getUserAvatarUrl(user);

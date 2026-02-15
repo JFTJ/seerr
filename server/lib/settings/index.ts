@@ -356,6 +356,8 @@ export interface OidcSettings {
   clientSecret: string;
   redirectUri: string;
   scope: string;
+  requiredRoles: string[];
+  roleClaim: string;
 }
 
 export interface AllSettings {
@@ -612,6 +614,8 @@ class Settings {
         clientSecret: '',
         redirectUri: '',
         scope: 'openid profile',
+        requiredRoles: [],
+        roleClaim: '',
       },
       migrations: [],
     };

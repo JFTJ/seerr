@@ -25,6 +25,8 @@ oidcRoutes.post('/', async (req, res, next) => {
       clientSecret: body.clientSecret,
       redirectUri: body.redirectUri,
       scope: body.scope || 'openid profile',
+      requiredRoles: body.requiredRoles ?? [],
+      roleClaim: body.roleClaim ?? '',
     };
 
     await settings.save();
@@ -52,6 +54,8 @@ function getSafeConfig(oidcConfig: OidcSettings) {
     clientSecretSHA256,
     redirectUri: oidcConfig.redirectUri,
     scope: oidcConfig.scope,
+    requiredRoles: oidcConfig.requiredRoles,
+    roleClaim: oidcConfig.roleClaim,
   };
 }
 
