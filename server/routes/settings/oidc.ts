@@ -27,6 +27,7 @@ oidcRoutes.post('/', async (req, res, next) => {
       scope: body.scope || 'openid profile',
       requiredRoles: body.requiredRoles ?? [],
       roleClaim: body.roleClaim ?? '',
+      newUserLogin: body.newUserLogin ?? true,
     };
 
     await settings.save();
@@ -56,6 +57,7 @@ function getSafeConfig(oidcConfig: OidcSettings) {
     scope: oidcConfig.scope,
     requiredRoles: oidcConfig.requiredRoles,
     roleClaim: oidcConfig.roleClaim,
+    newUserLogin: oidcConfig.newUserLogin,
   };
 }
 

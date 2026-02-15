@@ -940,6 +940,23 @@ authRoutes.get('/oidc/callback', async (req, res) => {
       .getOne();
 
     if (!user) {
+      // Check if new user login is allowed
+      if (!settings.oidc.newUserLogin) {
+        logger.warn(
+          'OIDC login attempted for non-existent user but newUserLogin is disabled',
+          {
+            label: 'OIDC',
+            username,
+            openidSub: sub,
+          }
+        );
+        return res.redirect(
+          `/login?error_message=${encodeURI(
+            'User account not found and new user registration is disabled. Contact your administrator.'
+          )}`
+        );
+      }
+
       // User doesn't exist, we'll create them, but we need a username to do so
       if (!username) {
         return res.redirect(

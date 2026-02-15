@@ -358,6 +358,7 @@ export interface OidcSettings {
   scope: string;
   requiredRoles: string[];
   roleClaim: string;
+  newUserLogin: boolean;
 }
 
 export interface AllSettings {
@@ -616,6 +617,7 @@ class Settings {
         scope: 'openid profile',
         requiredRoles: [],
         roleClaim: '',
+        newUserLogin: true,
       },
       migrations: [],
     };

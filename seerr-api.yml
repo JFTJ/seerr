@@ -1624,6 +1624,10 @@ components:
         roleClaim:
           type: string
           default: ''
+        newUserLogin:
+          type: boolean
+          default: true
+          description: Allow OIDC users to create new accounts during login
       required:
         - authority
         - clientId
