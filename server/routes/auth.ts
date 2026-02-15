@@ -18,6 +18,7 @@ import { getHostname } from '@server/utils/getHostname';
 import { hasRequiredRoleClaims } from '@server/utils/oidc';
 import axios from 'axios';
 import { Router } from 'express';
+import gravatarUrl from 'gravatar-url';
 import net from 'net';
 import * as client from 'openid-client';
 import validator from 'validator';
@@ -970,8 +971,8 @@ authRoutes.get('/oidc/callback', async (req, res) => {
         openidSub: sub,
         permissions: settings.main.defaultPermissions,
         userType: UserType.OPENID,
+        avatar: gravatarUrl(email || username, { default: 'mm', size: 200 }),
       });
-      user.avatar = getUserAvatarUrl(user);
 
       await userRepository.save(user);
 
